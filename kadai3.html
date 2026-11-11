@@ -1,0 +1,232 @@
+
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ARゴールド集めゲーム</title>
+
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            background: black;
+            overflow: hidden;
+            font-family: sans-serif;
+        }
+
+        video {
+            display: none;
+        }
+
+        canvas {
+            width: 100vw;
+            height: 100vh;
+            display: block;
+        }
+
+        #score {
+            position: fixed;
+            top: 20px;
+            left: 20px;
+            z-index: 10;
+            color: white;
+            font-size: 24px;
+            font-weight: bold;
+            text-shadow: 2px 2px 4px black;
+        }
+
+        #status {
+            position: fixed;
+            bottom: 20px;
+            left: 0;
+            width: 100%;
+            text-align: center;
+            color: white;
+            text-shadow: 2px 2px 4px black;
+            z-index: 10;
+        }
+    </style>
+</head>
+
+<body>
+
+    <div id="score">GOLD：0</div>
+    <div id="status">カメラを起動しています...</div>
+
+    <video id="camera" autoplay playsinline></video>
+    <canvas id="canvas" width="640" height="480"></canvas>
+
+    <!-- MediaPipe Hands -->
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
+
+    <script>
+        const video = document.getElementById("camera");
+        const canvas = document.getElementById("canvas");
+        const ctx = canvas.getContext("2d");
+
+        const heroImage = new Image();
+        heroImage.src = "./hero.jpg";
+
+        const goldImage = new Image();
+        goldImage.src = "./gold.jpg";
+
+        const hero = {
+            x: 100,
+            y: 100,
+            width: 70,
+            height: 70
+        };
+
+        const gold = {
+            x: 300,
+            y: 200,
+            width: 40,
+            height: 40
+        };
+
+        let score = 0;
+        let handDetected = false;
+
+        // ゴールドをランダムな位置に移動
+        function resetGold() {
+            gold.x = Math.random() * (canvas.width - gold.width);
+            gold.y = Math.random() * (canvas.height - gold.height);
+        }
+
+        // 当たり判定
+        function checkHit() {
+            if (
+                hero.x + hero.width > gold.x &&
+                hero.x < gold.x + gold.width &&
+                hero.y + hero.height > gold.y &&
+                hero.y < gold.y + gold.height
+            ) {
+                score++;
+                document.getElementById("score").textContent =
+                    "GOLD：" + score;
+
+                resetGold();
+            }
+        }
+
+        // 描画
+        function render(results) {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // カメラ映像を左右反転して表示
+            ctx.save();
+            ctx.translate(canvas.width, 0);
+            ctx.scale(-1, 1);
+            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+            ctx.restore();
+
+            // ゴールドを表示
+            if (goldImage.complete && goldImage.naturalWidth > 0) {
+                ctx.drawImage(
+                    goldImage,
+                    gold.x,
+                    gold.y,
+                    gold.width,
+                    gold.height
+                );
+            }
+
+            // 手が認識されている場合
+            if (
+                results.multiHandLandmarks &&
+                results.multiHandLandmarks.length > 0
+            ) {
+                handDetected = true;
+
+                // 手のひらの中心付近（ランドマーク9）を取得
+                const landmark =
+                    results.multiHandLandmarks[0][9];
+
+                // 左右反転した映像に合わせる
+                hero.x = (1 - landmark.x) * canvas.width
+                    - hero.width / 2;
+
+                hero.y = landmark.y * canvas.height
+                    - hero.height / 2;
+
+                // 画面外に出ないようにする
+                hero.x = Math.max(
+                    0,
+                    Math.min(canvas.width - hero.width, hero.x)
+                );
+
+                hero.y = Math.max(
+                    0,
+                    Math.min(canvas.height - hero.height, hero.y)
+                );
+
+                // 勇者を表示
+                if (heroImage.complete && heroImage.naturalWidth > 0) {
+                    ctx.drawImage(
+                        heroImage,
+                        hero.x,
+                        hero.y,
+                        hero.width,
+                        hero.height
+                    );
+                }
+
+                checkHit();
+
+                document.getElementById("status").textContent =
+                    "手を動かしてゴールドを集めよう！";
+            } else {
+                handDetected = false;
+
+                document.getElementById("status").textContent =
+                    "カメラに手を映してください";
+            }
+        }
+
+        // MediaPipe Handsの設定
+        const hands = new Hands({
+            locateFile: (file) => {
+                return "https://cdn.jsdelivr.net/npm/@mediapipe/hands/" + file;
+            }
+        });
+
+        hands.setOptions({
+            maxNumHands: 1,
+            modelComplexity: 1,
+            minDetectionConfidence: 0.7,
+            minTrackingConfidence: 0.7
+        });
+
+        // 手の認識結果を受け取る
+        hands.onResults(render);
+
+        // カメラ起動
+        const camera = new Camera(video, {
+            onFrame: async () => {
+                await hands.send({ image: video });
+            },
+            width: 640,
+            height: 480
+        });
+
+        camera.start()
+            .then(() => {
+                document.getElementById("status").textContent =
+                    "手をカメラに映してください";
+            })
+            .catch((error) => {
+                document.getElementById("status").textContent =
+                    "カメラを起動できませんでした";
+                console.error(error);
+            });
+
+    </script>
+
+</body>
+</html>
